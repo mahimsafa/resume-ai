@@ -49,33 +49,62 @@ def generate_objective(job_description):
     
     return result.content.strip()
 
-def get_next_available_filename(base_path):
-    """Generate the next available filename in the sequence (resume-1.docx, resume-2.docx, etc.)"""
-    base_dir = os.path.dirname(base_path)
-    base_name, ext = os.path.splitext(os.path.basename(base_path))
-    counter = 1
+def generate_job_specific_filename(job_description, base_name="mahim"):
+    """Generate a job-specific filename based on the job description."""
+    # Clean and prepare the base filename
+    base_name = base_name.lower().replace(' ', '-')
     
-    while True:
-        if counter == 1:
-            new_path = os.path.join(base_dir, f"{base_name}{ext}")
-            if not os.path.exists(new_path):
-                return new_path
-        
-        new_path = os.path.join(base_dir, f"{base_name}-{counter}{ext}")
-        if not os.path.exists(new_path):
-            return new_path
+    # Extract key terms from job description for the filename
+    import re
+    
+    # Look for job title patterns
+    title_patterns = [
+        r'(?:looking for|seeking|position:\s*)([^\n\.]+)',  # After "looking for" or "seeking" or "Position:"
+        r'(?:position|role)[:\s]+([^\n\.]+)',  # After "Position:" or "Role:"
+        r'([A-Z][A-Za-z\s]+(?:Engineer|Developer|Specialist|Manager))',  # Common job title patterns
+    ]
+    
+    job_title = None
+    for pattern in title_patterns:
+        match = re.search(pattern, job_description, re.IGNORECASE)
+        if match:
+            job_title = match.group(1).strip()
+            break
+    
+    # Clean up the job title for filename
+    if job_title:
+        # Remove special characters and extra spaces
+        job_title = re.sub(r'[^\w\s-]', '', job_title)
+        job_title = re.sub(r'\s+', '-', job_title).lower()
+        # Limit the length of the job title part
+        job_title = job_title[:30]  # Keep it reasonable length for filenames
+        filename = f"{base_name}-{job_title}.docx"
+    else:
+        # Fallback to timestamp if we can't extract a good title
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{base_name}-application-{timestamp}.docx"
+    
+    # Make sure the filename is unique
+    counter = 1
+    original_filename = filename
+    while os.path.exists(filename):
+        name, ext = os.path.splitext(original_filename)
+        filename = f"{name}-{counter}{ext}"
         counter += 1
+    
+    return filename
 
-def update_docx_objective(new_objective, docx_path='resume.docx'):
+def update_docx_objective(new_objective, job_description, docx_path='resume.docx'):
     """
     Update the objective section in the DOCX file by replacing <objective_here>
     with the generated objective text, preserving formatting.
-    Saves the file with an incremental filename (resume-1.docx, resume-2.docx, etc.)
+    Saves the file with a job-specific filename.
     Returns the path to the saved file.
     """
     try:
-        # Generate the output filename
-        output_path = get_next_available_filename(docx_path)
+        # Generate the output filename based on job description
+        output_path = generate_job_specific_filename(job_description)
         
         # Load the document
         doc = Document(docx_path)
@@ -164,9 +193,9 @@ if __name__ == "__main__":
         objective = generate_objective(job_description)
         print(objective)
         
-        # Update the DOCX file with the new objective
-        output_file = update_docx_objective(objective)
-        print(f"\nYour updated resume has been saved as: {output_file}")
+        # Update the DOCX file with the new objective and job description
+        output_file = update_docx_objective(objective, job_description)
+        print(f"\nYour updated resume has been saved as: {os.path.basename(output_file)}")
     except FileNotFoundError:
         print("Error: jobdescription.txt file not found. Please create it with the job description.")
     except Exception as e:
