@@ -49,51 +49,76 @@ def generate_objective(job_description):
     
     return result.content.strip()
 
-def generate_job_specific_filename(job_description, base_name="mahim"):
-    """Generate a job-specific filename based on the job description."""
-    # Clean and prepare the base filename
-    base_name = base_name.lower().replace(' ', '-')
-    
-    # Extract key terms from job description for the filename
-    import re
-    
-    # Look for job title patterns
-    title_patterns = [
-        r'(?:looking for|seeking|position:\s*)([^\n\.]+)',  # After "looking for" or "seeking" or "Position:"
-        r'(?:position|role)[:\s]+([^\n\.]+)',  # After "Position:" or "Role:"
-        r'([A-Z][A-Za-z\s]+(?:Engineer|Developer|Specialist|Manager))',  # Common job title patterns
-    ]
-    
-    job_title = None
-    for pattern in title_patterns:
-        match = re.search(pattern, job_description, re.IGNORECASE)
-        if match:
-            job_title = match.group(1).strip()
-            break
-    
-    # Clean up the job title for filename
-    if job_title:
-        # Remove special characters and extra spaces
-        job_title = re.sub(r'[^\w\s-]', '', job_title)
-        job_title = re.sub(r'\s+', '-', job_title).lower()
-        # Limit the length of the job title part
-        job_title = job_title[:30]  # Keep it reasonable length for filenames
-        filename = f"{base_name}-{job_title}.docx"
-    else:
-        # Fallback to timestamp if we can't extract a good title
+def generate_ai_filename(job_description, base_name="mahim"):
+    """Use AI to generate a descriptive filename with job role and company."""
+    try:
+        # Initialize the LLM
+        llm = ChatVertexAI(model="gemini-2.5-flash", temperature=0.3)
+        
+        # Create a prompt to extract job role and company
+        prompt = """
+        Based on the following job description, extract:
+        1. The job role/title (e.g., 'Senior Software Engineer')
+        2. The company name (e.g., 'Google')
+        
+        Return the result in this exact format:
+        ROLE: [extracted role]
+        COMPANY: [extracted company or 'Unknown']
+        
+        Job Description:
+        {job_description}
+        """
+        
+        # Get the response from the LLM
+        response = llm.invoke(prompt.format(job_description=job_description[:4000]))
+        
+        # Parse the response
+        role = "role"
+        company = "company"
+        
+        # Try to extract role and company from the response
+        import re
+        role_match = re.search(r'ROLE:\s*(.+)', response.content, re.IGNORECASE)
+        company_match = re.search(r'COMPANY:\s*(.+)', response.content, re.IGNORECASE)
+        
+        if role_match:
+            role = role_match.group(1).strip()
+        if company_match:
+            company = company_match.group(1).strip()
+        
+        # Clean up the extracted text for filename
+        def clean_text(text):
+            # Remove special characters and extra spaces
+            text = re.sub(r'[^\w\s-]', '', text)
+            text = re.sub(r'\s+', '-', text.lower())
+            return text[:30]  # Limit length
+        
+        role_clean = clean_text(role)
+        company_clean = clean_text(company)
+        
+        # Generate the base filename
+        filename = f"{base_name.lower()}-{role_clean}-at-{company_clean}.docx"
+        
+        # Ensure the filename is unique
+        counter = 1
+        original_filename = filename
+        while os.path.exists(filename):
+            name, ext = os.path.splitext(original_filename)
+            filename = f"{name.rsplit('-', 1)[0]}-{counter}{ext}"
+            counter += 1
+            
+        return filename
+        
+    except Exception as e:
+        print(f"Warning: Error generating AI filename: {str(e)}")
+        # Fallback to timestamp-based filename
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        filename = f"{base_name}-application-{timestamp}.docx"
-    
-    # Make sure the filename is unique
-    counter = 1
-    original_filename = filename
-    while os.path.exists(filename):
-        name, ext = os.path.splitext(original_filename)
-        filename = f"{name}-{counter}{ext}"
-        counter += 1
-    
-    return filename
+        return f"{base_name.lower()}-resume-{timestamp}.docx"
+
+def generate_job_specific_filename(job_description, base_name="mahim"):
+    """Generate a job-specific filename using AI."""
+    return generate_ai_filename(job_description, base_name)
 
 def update_docx_objective(new_objective, job_description, docx_path='resume.docx'):
     """
