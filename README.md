@@ -7,9 +7,8 @@ An AI-powered tool that generates tailored career objectives for your resume bas
 - **AI-Powered Objective Generation**: Creates personalized career objectives using Google's Gemini AI
 - **Seamless DOCX Integration**: Updates your Word resume while preserving all formatting and styles
 - **Smart Filenames**: Automatically generates descriptive filenames based on job role and company
-- **Modular Architecture**: Clean separation of concerns with dedicated service modules
+- **Simple & Lightweight**: Single Python file with minimal dependencies
 - **Error Handling**: Comprehensive error handling and user feedback
-- **Configurable**: Customize fonts, styles, and file locations
 
 ## 🚀 Quick Start
 
@@ -38,16 +37,30 @@ An AI-powered tool that generates tailored career objectives for your resume bas
    ```
 
 4. **Set up Google Cloud credentials**:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and add your Google Cloud project details.
+   - Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to your service account key file
+   - Or use `gcloud auth application-default login` if you have the Google Cloud SDK installed
 
 ## 🛠️ Usage
 
-### Basic Usage
+1. **Prepare your files**:
+   - Create an `input` directory if it doesn't exist
+   - Place your resume in `input/resume.md`
+   - Place your job description in `input/jobdescription.txt`
+   - Place your resume template (with `<objective_here>` placeholder) in `input/resume.docx`
 
-1. **Prepare your files** in the `input/` directory:
+2. **Run the script**:
+   ```bash
+   python main.py
+   ```
+   
+   Or specify a custom job description file:
+   ```bash
+   python main.py path/to/your/jobdescription.txt
+   ```
+
+3. **Find your updated resume**:
+   - The generated resume will be saved in the `generated` directory
+   - The filename will be based on the job role and company name
    ```
    input/
    ├── resume.md          # Your resume in markdown format
