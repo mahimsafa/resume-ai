@@ -1,20 +1,36 @@
 """Service for handling document operations."""
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 from docx import Document
 from docx.shared import Pt
+from docx.document import Document as DocumentType
 
-from resume_ai.utils.file_utils import ensure_extension, get_unique_filename
+from resume_ai.utils import (
+    ensure_extension,
+    get_unique_filename,
+    read_file as read_file_util,
+    ensure_directory
+)
 
 class DocumentService:
     """Service for handling document operations."""
     
     @staticmethod
     def read_file(file_path: str) -> str:
-        """Read content from a file."""
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return file.read()
+        """Read content from a file.
+        
+        Args:
+            file_path: Path to the file to read
+            
+        Returns:
+            str: The file contents
+            
+        Raises:
+            FileNotFoundError: If the file doesn't exist
+            IOError: If there's an error reading the file
+        """
+        return read_file_util(file_path)
     
     @classmethod
     def update_docx_objective(
@@ -40,9 +56,10 @@ class DocumentService:
         Returns:
             str: Path to the saved file
         """
-        # Ensure output path has .docx extension and is unique
-        output_path = ensure_extension(output_path, '.docx')
-        output_path = get_unique_filename(output_path.rsplit('.', 1)[0], '.docx')
+        # Ensure output directory exists and get a unique filename
+        output_path = Path(output_path)
+        ensure_directory(output_path.parent)
+        output_path = get_unique_filename(output_path)
         
         doc = Document(source_path)
         placeholder_found = False
@@ -52,10 +69,10 @@ class DocumentService:
             if placeholder in para.text:
                 para.clear()
                 # Add 'OBJECTIVE' in bold
-                title_run = para.add_run('OBJECTIVE\n')
-                title_run.bold = True
-                title_run.font.name = font_name
-                title_run.font.size = Pt(font_size)
+                # title_run = para.add_run('OBJECTIVE\n')
+                # title_run.bold = True
+                # title_run.font.name = font_name
+                # title_run.font.size = Pt(font_size)
                 # Add objective text with normal weight
                 obj_run = para.add_run(new_objective)
                 obj_run.font.name = font_name
@@ -67,10 +84,10 @@ class DocumentService:
         if not placeholder_found:
             para = doc.add_paragraph()
             # Add 'OBJECTIVE' in bold with specified font
-            title_run = para.add_run('OBJECTIVE\n')
-            title_run.bold = True
-            title_run.font.name = font_name
-            title_run.font.size = Pt(font_size)
+            # title_run = para.add_run('OBJECTIVE\n')
+            # title_run.bold = True
+            # title_run.font.name = font_name
+            # title_run.font.size = Pt(font_size)
             # Add objective text with normal weight
             obj_run = para.add_run(new_objective)
             obj_run.font.name = font_name

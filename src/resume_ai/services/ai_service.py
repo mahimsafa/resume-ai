@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 
 from langchain_google_vertexai import ChatVertexAI
 from langchain.prompts import PromptTemplate
-from resume_ai.utils.file_utils import clean_text_for_filename
+from resume_ai.utils import clean_text_for_filename
 
 class AIService:
     """Service for handling AI-related operations."""
@@ -76,7 +76,15 @@ class AIService:
         return objective, filename
     
     def _parse_ai_response(self, response_content: str, base_name: str) -> Tuple[str, str]:
-        """Parse the AI response into objective and filename."""
+        """Parse the AI response into objective and filename.
+        
+        Args:
+            response_content: The raw response content from the AI
+            base_name: Base name to use for the filename
+            
+        Returns:
+            Tuple of (objective, filename)
+        """
         objective = ""
         filename = f"{base_name.lower()}-resume"
         
@@ -88,29 +96,44 @@ class AIService:
             
             for line in lines:
                 line = line.strip()
+                if not line:
+                    continue
+                    
                 if line.upper() == 'OBJECTIVE:':
                     in_objective = True
                     in_filename = False
+                    continue
                 elif line.upper() == 'FILENAME:':
                     in_objective = False
                     in_filename = True
-                elif in_objective and line:
+                    continue
+                    
+                if in_objective:
                     if objective:  # Add space between lines
                         objective += ' '
                     objective += line
-                elif in_filename and line and not line.startswith('['):
-                    # Clean up the filename
+                elif in_filename and not line.startswith('['):
+                    # Clean up the filename and ensure it's safe
                     clean_line = clean_text_for_filename(line)
                     filename = f"{base_name.lower()}-{clean_line}"
                     filename = filename[:100]  # Ensure reasonable length
                     break  # Only process the first filename line
             
-            # If we couldn't parse the response, use fallback
+            # If we couldn't parse the response, use the entire content as fallback
             if not objective:
                 objective = response_content.strip()
-                
-            return objective, filename
             
-        except Exception:
+            # Ensure we have a valid filename
+            if not filename or filename == f"{base_name.lower()}-resume":
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename = f"{base_name.lower()}-resume-{timestamp}"
+                
+            return objective.strip(), filename
+            
+        except Exception as e:
             # Fallback if parsing fails
-            return response_content.strip(), f"{base_name.lower()}-resume"
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            fallback_filename = f"{base_name.lower()}-resume-{timestamp}"
+            return response_content.strip(), fallback_filename

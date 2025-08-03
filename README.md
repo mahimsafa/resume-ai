@@ -1,89 +1,138 @@
 # Resume AI
 
-An AI-powered tool that generates tailored career objectives for your resume based on job descriptions.
+An AI-powered tool that generates tailored career objectives for your resume based on job descriptions using Google's Gemini AI model.
 
-## Features
+## ✨ Features
 
-- Generates personalized career objectives using AI
-- Updates your DOCX resume with the new objective
-- Creates descriptive filenames based on job role and company
-- Preserves formatting and styling of your resume
-- Easy to use command-line interface
+- **AI-Powered Objective Generation**: Creates personalized career objectives using Google's Gemini AI
+- **Seamless DOCX Integration**: Updates your Word resume while preserving all formatting and styles
+- **Smart Filenames**: Automatically generates descriptive filenames based on job role and company
+- **Modular Architecture**: Clean separation of concerns with dedicated service modules
+- **Error Handling**: Comprehensive error handling and user feedback
+- **Configurable**: Customize fonts, styles, and file locations
 
-## Installation
+## 🚀 Quick Start
 
-1. Clone the repository:
+### Prerequisites
+- Python 3.8+
+- Google Cloud Account with Vertex AI enabled
+- A DOCX resume with a placeholder `<objective_here>`
+
+### Installation
+
+1. **Clone the repository**:
    ```bash
    git clone https://github.com/mahimsafa/resume-ai.git
    cd resume-ai
    ```
 
-2. Install the required dependencies:
+2. **Set up a virtual environment** (recommended):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-   Or install in development mode:
-   ```bash
-   pip install -e .
-   ```
-
-3. Set up your environment variables:
+4. **Set up Google Cloud credentials**:
    ```bash
    cp .env.example .env
    ```
-   Then edit `.env` with your Google Cloud credentials.
+   Edit `.env` and add your Google Cloud project details.
 
-## Usage
+## 🛠️ Usage
 
-1. Prepare your files:
-   - Place your resume in `resume.md` (markdown format)
-   - Create a `resume.docx` with a placeholder `<objective_here>` where you want the objective to be inserted
-   - Add the job description to `jobdescription.txt`
+### Basic Usage
 
-2. Run the tool:
-   ```bash
-   python -m resume_ai
+1. **Prepare your files** in the `input/` directory:
    ```
-   Or if installed with pip:
-   ```bash
-   resume-ai
+   input/
+   ├── resume.md          # Your resume in markdown format
+   ├── resume.docx        # Your resume with <objective_here> placeholder
+   └── jobdescription.txt # The job description
    ```
 
-3. The tool will:
-   - Read your resume and the job description
-   - Generate a tailored objective
-   - Update your resume with the new objective
-   - Save it with a descriptive filename
+2. **Run the tool**:
+   ```bash
+   python main.py
+   ```
+   Or for a specific job description:
+   ```bash
+   python main.py input/jobdescription.txt
+   ```
 
-## Project Structure
+3. **Find your updated resume** in the `generated/` directory with a descriptive filename.
+
+### Advanced Usage
+
+#### Customize Output Directory
+```bash
+python main.py --output custom-output/
+```
+
+#### Specify Custom Input Files
+```bash
+python main.py --resume input/my-resume.md --docx input/my-resume.docx --job input/job-posting.txt
+```
+
+## 🏗️ Project Structure
 
 ```
 resume-ai/
+├── input/                  # Input files (manually added)
+│   ├── resume.md
+│   ├── resume.docx
+│   └── jobdescription.txt
+├── generated/             # Generated resumes (auto-created)
 ├── src/
 │   └── resume_ai/
 │       ├── __init__.py
-│       ├── app.py              # Main application
-│       ├── services/           # Service classes
+│       ├── app.py              # Main application class
+│       ├── services/           # Service layer
 │       │   ├── __init__.py
-│       │   ├── ai_service.py   # AI-related functionality
-│       │   └── document_service.py  # Document handling
-│       └── utils/              # Utility functions
+│       │   ├── ai_service.py   # AI integration with Gemini
+│       │   └── document_service.py  # DOCX manipulation
+│       └── utils/              # Helper functions
 │           ├── __init__.py
 │           └── file_utils.py   # File operations
-├── .env.example               # Example environment variables
-├── README.md                  # This file
-├── requirements.txt           # Python dependencies
-└── setup.py                   # Package configuration
+├── .env.example           # Environment variables template
+├── .gitignore
+├── README.md
+├── requirements.txt       # Python dependencies
+├── setup.py              # Package configuration
+└── setup_project.py      # Project setup helper
 ```
 
-## Requirements
+## 🔧 Configuration
 
-- Python 3.8+
-- Google Cloud credentials (for Vertex AI)
-- A DOCX resume with a placeholder `<objective_here>`
-- A markdown version of your resume
+### Environment Variables
+Create a `.env` file with:
+```ini
+GOOGLE_GENAI_USE_VERTEXAI=True
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_PROJECT=your-project-id
+```
 
-## License
+### Customizing the Prompt
+Edit the prompt template in `src/resume_ai/services/ai_service.py` to adjust how the AI generates objectives.
 
-MIT
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Powered by [Google Gemini AI](https://ai.google/)
+- Built with [python-docx](https://python-docx.readthedocs.io/)
+- Project structure inspired by [Python Packaging Authority](https://packaging.python.org/)
