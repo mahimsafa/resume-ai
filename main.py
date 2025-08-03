@@ -13,91 +13,87 @@ def read_job_description():
     with open('jobdescription.txt', 'r', encoding='utf-8') as file:
         return file.read()
 
-def generate_objective(job_description):
+def generate_objective_and_filename(job_description, base_name="mahim"):
+    """
+    Generate both the tailored objective and a descriptive filename in a single AI call.
+    Returns a tuple of (objective, filename)
+    """
     # Read the resume
     resume_content = read_resume()
     
     # Initialize the LLM
     llm = ChatVertexAI(model="gemini-2.5-flash", temperature=0.7)
     
-    # Create a prompt template
+    # Create a combined prompt template
     prompt_template = """
-    Based on the following resume and job description, generate a compelling and tailored career objective.
-    The objective should be concise (2-3 sentences) and highlight the most relevant skills and experiences.
-    There shouldn't be any extra text or markdown formatting. Just the objective in plain text so that I can copy and paste to my resume or LinkedIn profile.
+    Based on the following resume and job description:
     
-    Resume:
+    RESUME:
     {resume}
     
-    Job Description:
+    JOB DESCRIPTION:
     {job_description}
     
-    Tailored Objective:
+    Please provide:
+    1. A tailored career objective (2-3 sentences) that highlights the most relevant skills and experiences.
+    2. A suggested filename that includes the job role and company name in the format: [role]-at-[company].docx
+    
+    Return the result in this exact format:
+    
+    OBJECTIVE:
+    [Your tailored objective here]
+    
+    FILENAME:
+    [role]-at-[company].docx
+    
+    Notes:
+    - The objective should be concise and focused on the role's requirements.
+    - The filename should be in lowercase with words separated by hyphens.
+    - Keep the filename under 50 characters total.
+    - If company name is not clear, use 'company' as placeholder.
     """
     
-    prompt = PromptTemplate(
-        input_variables=["resume", "job_description"],
-        template=prompt_template
-    )
+    # Get the response from the LLM
+    response = llm.invoke(prompt_template.format(
+        resume=resume_content[:2000],  # Limit resume length
+        job_description=job_description[:2000]  # Limit job description length
+    ))
     
-    # Create and run the chain
-    chain = prompt | llm
-    result = chain.invoke({
-        "resume": resume_content,
-        "job_description": job_description
-    })
+    # Parse the response
+    objective = ""
+    filename = f"{base_name.lower()}-resume.docx"
     
-    return result.content.strip()
-
-def generate_ai_filename(job_description, base_name="mahim"):
-    """Use AI to generate a descriptive filename with job role and company."""
     try:
-        # Initialize the LLM
-        llm = ChatVertexAI(model="gemini-2.5-flash", temperature=0.3)
+        # Split the response into lines and process
+        lines = response.content.split('\n')
+        in_objective = False
+        in_filename = False
         
-        # Create a prompt to extract job role and company
-        prompt = """
-        Based on the following job description, extract:
-        1. The job role/title (e.g., 'Senior Software Engineer')
-        2. The company name (e.g., 'Google')
+        for line in lines:
+            line = line.strip()
+            if line.upper() == 'OBJECTIVE:':
+                in_objective = True
+                in_filename = False
+            elif line.upper() == 'FILENAME:':
+                in_objective = False
+                in_filename = True
+            elif in_objective and line:
+                if objective:  # Add space between lines
+                    objective += ' '
+                objective += line
+            elif in_filename and line and not line.startswith('['):
+                # Clean up the filename
+                import re
+                clean_line = re.sub(r'[^\w\s-]', '', line.lower())
+                clean_line = re.sub(r'\s+', '-', clean_line)
+                clean_line = clean_line.replace('.docx', '')  # Remove .docx if present
+                filename = f"{base_name.lower()}-{clean_line}.docx"
+                filename = filename[:100]  # Ensure reasonable length
+                break  # Only process the first filename line
         
-        Return the result in this exact format:
-        ROLE: [extracted role]
-        COMPANY: [extracted company or 'Unknown']
-        
-        Job Description:
-        {job_description}
-        """
-        
-        # Get the response from the LLM
-        response = llm.invoke(prompt.format(job_description=job_description[:4000]))
-        
-        # Parse the response
-        role = "role"
-        company = "company"
-        
-        # Try to extract role and company from the response
-        import re
-        role_match = re.search(r'ROLE:\s*(.+)', response.content, re.IGNORECASE)
-        company_match = re.search(r'COMPANY:\s*(.+)', response.content, re.IGNORECASE)
-        
-        if role_match:
-            role = role_match.group(1).strip()
-        if company_match:
-            company = company_match.group(1).strip()
-        
-        # Clean up the extracted text for filename
-        def clean_text(text):
-            # Remove special characters and extra spaces
-            text = re.sub(r'[^\w\s-]', '', text)
-            text = re.sub(r'\s+', '-', text.lower())
-            return text[:30]  # Limit length
-        
-        role_clean = clean_text(role)
-        company_clean = clean_text(company)
-        
-        # Generate the base filename
-        filename = f"{base_name.lower()}-{role_clean}-at-{company_clean}.docx"
+        # If we couldn't parse the response, generate a fallback filename
+        if not objective:
+            objective = response.content.strip()
         
         # Ensure the filename is unique
         counter = 1
@@ -106,33 +102,47 @@ def generate_ai_filename(job_description, base_name="mahim"):
             name, ext = os.path.splitext(original_filename)
             filename = f"{name.rsplit('-', 1)[0]}-{counter}{ext}"
             counter += 1
-            
-        return filename
+        
+        return objective.strip(), filename
         
     except Exception as e:
-        print(f"Warning: Error generating AI filename: {str(e)}")
-        # Fallback to timestamp-based filename
+        print(f"Warning: Error parsing AI response: {str(e)}")
+        # Fallback to simple filename with timestamp
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        return f"{base_name.lower()}-resume-{timestamp}.docx"
+        fallback_filename = f"{base_name.lower()}-resume-{timestamp}.docx"
+        return response.content.strip(), fallback_filename
 
 def generate_job_specific_filename(job_description, base_name="mahim"):
     """Generate a job-specific filename using AI."""
-    return generate_ai_filename(job_description, base_name)
+    # This is now just a wrapper for backward compatibility
+    _, filename = generate_objective_and_filename(job_description, base_name)
+    return filename
 
-def update_docx_objective(new_objective, job_description, docx_path='resume.docx'):
+def update_docx_objective(new_objective, job_description, output_filename=None, source_docx='resume.docx'):
     """
     Update the objective section in the DOCX file by replacing <objective_here>
     with the generated objective text, preserving formatting.
-    Saves the file with a job-specific filename.
-    Returns the path to the saved file.
+    
+    Args:
+        new_objective: The generated objective text
+        job_description: The job description (for reference)
+        output_filename: The desired output filename (if None, will be generated)
+        source_docx: Path to the source DOCX file
+        
+    Returns:
+        str: Path to the saved file
     """
     try:
-        # Generate the output filename based on job description
-        output_path = generate_job_specific_filename(job_description)
+        # Generate output filename if not provided
+        if output_filename is None:
+            output_path = generate_job_specific_filename(job_description)
+        else:
+            # Ensure the output filename has .docx extension
+            output_path = output_filename if output_filename.lower().endswith('.docx') else f"{output_filename}.docx"
         
-        # Load the document
-        doc = Document(docx_path)
+        # Load the source document
+        doc = Document(source_docx)
         
         # Track if we found and replaced the placeholder
         placeholder_found = False
@@ -215,11 +225,17 @@ if __name__ == "__main__":
             raise ValueError("Job description file is empty")
             
         print("\nGenerating tailored objective...\n")
-        objective = generate_objective(job_description)
+        # Generate both objective and filename in one call
+        objective, filename = generate_objective_and_filename(job_description, "mahim")
         print(objective)
         
         # Update the DOCX file with the new objective and job description
-        output_file = update_docx_objective(objective, job_description)
+        output_file = update_docx_objective(
+            objective, 
+            job_description, 
+            output_filename=filename,  # Pass the generated filename
+            source_docx='resume.docx'  # Source template
+        )
         print(f"\nYour updated resume has been saved as: {os.path.basename(output_file)}")
     except FileNotFoundError:
         print("Error: jobdescription.txt file not found. Please create it with the job description.")
