@@ -73,6 +73,59 @@ class ResumeAI:
             return False, f"Missing required files: {', '.join(missing)}. Please add them to the 'input' directory."
         return True, ""
     
+    def _generate_cover_letter(
+        self,
+        resume_content: str,
+        job_description: str,
+        company_name: str = "the company"
+    ) -> str:
+        """Generate a tailored cover letter based on resume and job description.
+        
+        Args:
+            resume_content: The content of the resume
+            job_description: The job description
+            company_name: Name of the company (for personalization)
+            
+        Returns:
+            Generated cover letter text
+        """
+        prompt_template = """
+        Based on the following resume and job description, please write a professional 
+        cover letter that highlights the most relevant skills and experiences.
+        
+        RESUME:
+        {resume}
+        
+        JOB DESCRIPTION:
+        {job_description}
+        
+        Your cover letter should:
+        1. Be addressed to the hiring manager
+        2. Be specific about the role at {company_name}
+        3. Highlight 2-3 key qualifications that match the job requirements
+        4. Do not include any skills or experiences that are not relevant to the job and not mentioned in the resume
+        5. Be concise (2-3 paragraphs max)
+        6. End with a professional closing
+        
+        Return only the cover letter content, without any additional text or formatting.
+        """
+        
+        prompt = PromptTemplate(
+            template=prompt_template,
+            input_variables=["resume", "job_description", "company_name"]
+        )
+        
+        # Format the prompt
+        formatted_prompt = prompt.format(
+            resume=resume_content[:4000],
+            job_description=job_description[:2000],
+            company_name=company_name
+        )
+        
+        # Generate the response
+        response = self.llm.invoke(formatted_prompt)
+        return response.content.strip()
+    
     def _generate_objective_and_filename(
         self,
         resume_content: str,
@@ -196,12 +249,14 @@ class ResumeAI:
         doc.save(output_path)
         return output_path
     
-    def run(self, job_description_path: Optional[str] = None):
+    def run(self, job_description_path: Optional[str] = None, generate_cv: bool = False, company_name: str = 'the company'):
         """Run the Resume AI application.
         
         Args:
             job_description_path: Optional path to a job description file.
                                  If not provided, uses the default location.
+            generate_cv: Whether to generate a cover letter
+            company_name: Name of the company for cover letter personalization
         """
         print("\n=== Resume AI ===\n")
         
@@ -262,18 +317,48 @@ class ResumeAI:
             print("\n✓ Resume updated successfully!")
             print(f"   Saved to: {output_path}")
             
+            # Generate cover letter if requested
+            if generate_cv:
+                print("\nGenerating cover letter...")
+                cover_letter = self._generate_cover_letter(
+                    resume_content=resume_content,
+                    job_description=job_description,
+                    company_name=company_name
+                )
+                
+                # Save cover letter to a text file
+                cover_letter_path = self.output_dir / f"{filename}-cover-letter.txt"
+                with open(cover_letter_path, 'w') as f:
+                    f.write(cover_letter)
+                
+                print("\n✓ Cover letter generated successfully!")
+                print(f"   Saved to: {cover_letter_path}")
+            
         except Exception as e:
             print(f"\nError: {str(e)}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Generate a tailored resume objective.')
+    parser = argparse.ArgumentParser(description='Generate a tailored resume objective and cover letter.')
     parser.add_argument(
         'job_description',
         nargs='?',
         default=None,
         help='Path to the job description file (default: input/jobdescription.txt)'
+    )
+    parser.add_argument(
+        '--cv',
+        action='store_true',
+        help='Generate a cover letter along with the resume'
+    )
+    parser.add_argument(
+        '--company',
+        type=str,
+        default='the company',
+        help='Name of the company for cover letter personalization (used with --cv)'
     )
     return parser.parse_args()
 
@@ -281,7 +366,11 @@ def main():
     """Main entry point for the Resume AI application."""
     args = parse_arguments()
     app = ResumeAI()
-    app.run(args.job_description)
+    app.run(
+        job_description_path=args.job_description,
+        generate_cv=args.cv,
+        company_name=args.company
+    )
 
 if __name__ == "__main__":
     def run():
