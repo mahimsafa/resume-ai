@@ -284,18 +284,19 @@ def main():
     app.run(args.job_description)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n❌ Operation cancelled by user.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ An error occurred: {str(e)}", file=sys.stderr)
-        print("   Make sure to install the required dependencies:")
-        print("   pip install -r requirements.txt")
-        sys.exit(1)
-        print("   python setup_project.py")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+    def run():
+        try:
+            main()
+        except KeyboardInterrupt:
+            print("\n❌ Operation cancelled by user.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n❌ An error occurred: {str(e)}", file=sys.stderr)
+            print("   Make sure to install the required dependencies:")
+            print("   pip install -r requirements.txt")
+            sys.exit(1)
+            print("   python setup_project.py")
+            sys.exit(1)
+    
+    # This ensures the script only runs once when executed directly
+    run()
