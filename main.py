@@ -13,10 +13,13 @@ Example:
 """
 import os
 import sys
-import re
 import argparse
+import re
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
+
+# Local imports
+from utils.pdf_utils import convert_to_pdf_libreoffice
 
 # Third-party imports
 from langchain_google_vertexai import ChatVertexAI
@@ -153,7 +156,10 @@ class ResumeAI:
         
         Please provide:
         1. A tailored career objective (2-3 sentences) that highlights the most relevant skills and experiences.
-        2. A suggested filename that includes the job role and company name in the format: [role]-at-[company]
+        2. Make sure the objective is not too generic and is tailored to the job description.
+        3. Make sure the objective is not too long or short.
+        4. Make sure the objective is does not include any irrelevent skills or experiences. Also not any skills or experiences that are not mentioned in the resume.
+        5. A suggested filename that includes the job role and company name in the format: [role]-at-[company]
         
         Return the result in this exact format:
         
@@ -177,6 +183,7 @@ class ResumeAI:
         
         # Generate the response
         response = self.llm.invoke(formatted_prompt)
+        print(response.content)
         
         # Parse the response
         try:
@@ -185,7 +192,10 @@ class ResumeAI:
             
             if not objective or not filename:
                 raise ValueError("Could not parse AI response")
-                
+            print('objective')
+            print(objective)
+            print('objective group')
+            print(objective.group(1))
             objective = objective.group(1).strip()
             filename = filename.group(1).strip()
             
@@ -249,7 +259,8 @@ class ResumeAI:
         doc.save(output_path)
         return output_path
     
-    def run(self, job_description_path: Optional[str] = None, generate_cv: bool = False, company_name: str = 'the company'):
+    def run(self, job_description_path: Optional[str] = None, generate_cv: bool = False, 
+             company_name: str = 'the company', generate_pdf: bool = False):
         """Run the Resume AI application.
         
         Args:
@@ -257,6 +268,7 @@ class ResumeAI:
                                  If not provided, uses the default location.
             generate_cv: Whether to generate a cover letter
             company_name: Name of the company for cover letter personalization
+            generate_pdf: Whether to generate a PDF version of the resume
         """
         print("\n=== Resume AI ===\n")
         
@@ -317,6 +329,16 @@ class ResumeAI:
             print("\n✓ Resume updated successfully!")
             print(f"   Saved to: {output_path}")
             
+            # Generate PDF if requested
+            if generate_pdf:
+                print("\nGenerating PDF version...")
+                try:
+                    pdf_path = convert_to_pdf_libreoffice(str(output_path), str(self.output_dir))
+                    print(f"✓ PDF generated successfully: {pdf_path}")
+                except Exception as e:
+                    print(f"⚠ Failed to generate PDF: {str(e)}")
+                    print("   Make sure LibreOffice is installed and the path is correctly set in pdf_utils.py")
+            
             # Generate cover letter if requested
             if generate_cv:
                 print("\nGenerating cover letter...")
@@ -360,6 +382,11 @@ def parse_arguments():
         default='the company',
         help='Name of the company for cover letter personalization (used with --cv)'
     )
+    parser.add_argument(
+        '--pdf',
+        action='store_true',
+        help='Generate PDF version of the resume (requires LibreOffice)'
+    )
     return parser.parse_args()
 
 def main():
@@ -369,7 +396,8 @@ def main():
     app.run(
         job_description_path=args.job_description,
         generate_cv=args.cv,
-        company_name=args.company
+        company_name=args.company,
+        generate_pdf=args.pdf
     )
 
 if __name__ == "__main__":
