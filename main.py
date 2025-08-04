@@ -30,6 +30,7 @@ from typing import Optional, Tuple, Dict, Any
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 # Local imports
 from lib.objective_generator import generate_career_objective
@@ -48,6 +49,20 @@ app = FastAPI(
     title="Resume AI API",
     description="API for generating tailored career objectives and cover letters",
     version="1.0.0"
+)
+
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Request models
