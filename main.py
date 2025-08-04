@@ -99,49 +99,6 @@ def get_resume_template() -> str:
         raise FileNotFoundError("resume.docx not found in input/ directory")
     return str(template_path)
 
-# API Endpoints
-@app.post("/generate-objective/")
-async def generate_objective_endpoint(request: ObjectiveRequest):
-    """
-    Generate a career objective based on resume and job description.
-    
-    - **resume_content**: Content of the resume
-    - **job_description**: Job description to tailor the objective to
-    - **objective_length**: Length of the objective ('short', 'medium', or 'long')
-    - **tone**: Tone of the objective ('professional', 'enthusiastic', 'formal')
-    """
-    try:
-        objective = generate_career_objective(
-            resume_content=request.resume_content,
-            job_description=request.job_description,
-            objective_length=request.objective_length,
-            tone=request.tone
-        )
-        return {"objective": objective}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/generate-cover-letter/")
-async def generate_cover_letter_endpoint(request: CoverLetterRequest):
-    """
-    Generate a cover letter based on resume and job description.
-    
-    - **resume_content**: Content of the resume
-    - **job_description**: Job description to tailor the cover letter to
-    - **company_name**: Name of the company (for personalization)
-    - **tone**: Tone of the cover letter ('professional', 'enthusiastic', 'formal')
-    """
-    try:
-        cover_letter = generate_cover_letter(
-            resume_content=request.resume_content,
-            job_description=request.job_description,
-            company_name=request.company_name,
-            tone=request.tone
-        )
-        return {"cover_letter": cover_letter}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/queue/")
 async def process_job_application(
     request: QueueRequest,
@@ -172,9 +129,10 @@ async def process_job_application(
             tone=request.tone
         )
 
-        print(file_name)
-        print(objective)
-        print('-'*50)
+        # if any files in the output directory with the same prefix as the file_name, then append a number to the file_name
+        if output_dir.glob(f"{file_name}.*"):
+            file_name = f"{file_name}_{uuid.uuid4().hex[:8]}"
+        
         
         # Update resume with new objective
         # output_filename = f"resume_{uuid.uuid4().hex[:8]}.docx"
