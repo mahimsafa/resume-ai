@@ -2,33 +2,39 @@
 """
 Resume AI - AI-powered resume objective generator
 
-This script generates a tailored career objective based on your resume and a job description,
-then updates a DOCX resume with the new objective.
+This script provides both a CLI and API interface for generating tailored
+career objectives, cover letters, and updating resumes.
 
-Usage:
-    python main.py [job_description_file]
+API Endpoints:
+    POST /generate-objective/ - Generate a career objective
+    POST /generate-cover-letter/ - Generate a cover letter
+    POST /queue/ - Process a job application (objective + resume update + optional cover letter)
 
-Example:
-    python main.py input/jobdescription.txt
+CLI Usage:
+    python main.py [command] [options]
+
+Examples:
+    python main.py api  # Start the API server
+    python main.py generate job_description.txt  # Generate a resume with objective
+    python main.py update resume.docx  # Update an existing resume
 """
+from importlib import reload
 import os
 import sys
 import argparse
 import re
+import uvicorn
+import uuid
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
+from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 # Local imports
-from utils.pdf_utils import convert_to_pdf_libreoffice
-
-# Third-party imports
-from langchain_google_vertexai import ChatVertexAI
-from langchain.prompts import PromptTemplate
-from docx import Document
-from docx.shared import Pt
-from docx.document import Document as DocumentType
-
-# Local imports
+from lib.objective_generator import generate_career_objective
+from lib.cover_letter_generator import generate_cover_letter, save_cover_letter
+from lib.pdf_utils import update_resume_objective, create_pdf_from_docx
 from utils import (
     ensure_extension,
     get_unique_filename,
@@ -37,383 +43,313 @@ from utils import (
     read_file as read_file_util
 )
 
-class ResumeAI:
-    """Main application class for Resume AI."""
+# Initialize FastAPI app
+app = FastAPI(
+    title="Resume AI API",
+    description="API for generating tailored career objectives and cover letters",
+    version="1.0.0"
+)
+
+# Request models
+class ObjectiveRequest(BaseModel):
+    resume_content: str
+    job_description: str
+    objective_length: Optional[str] = "medium"
+    tone: Optional[str] = "professional"
+
+class CoverLetterRequest(BaseModel):
+    resume_content: str
+    job_description: str
+    company_name: Optional[str] = "the company"
+    tone: Optional[str] = "professional"
+
+class QueueRequest(BaseModel):
+    job_description: str
+    generate_cv: Optional[bool] = False
+    company_name: Optional[str] = "the company"
+    tone: Optional[str] = "professional"
+
+# Utility functions
+def get_resume_content() -> str:
+    """Read the default resume content."""
+    resume_path = Path("input/resume.md")
+    if not resume_path.exists():
+        raise FileNotFoundError("Default resume.md not found in input/ directory")
+    return read_file_util(str(resume_path))
+
+def get_resume_template() -> str:
+    """Get the path to the resume template."""
+    template_path = Path("input/resume.docx")
+    if not template_path.exists():
+        raise FileNotFoundError("resume.docx not found in input/ directory")
+    return str(template_path)
+
+# API Endpoints
+@app.post("/generate-objective/")
+async def generate_objective_endpoint(request: ObjectiveRequest):
+    """
+    Generate a career objective based on resume and job description.
     
-    def __init__(self, base_dir: Optional[str] = None):
-        """Initialize the Resume AI application.
-        
-        Args:
-            base_dir: Base directory for the application (defaults to current directory)
-        """
-        self.base_dir = Path(base_dir) if base_dir else Path.cwd()
-        self.input_dir = self.base_dir / 'input'
-        self.output_dir = self.base_dir / 'generated'
-        self.llm = ChatVertexAI(model="gemini-2.5-flash", temperature=0.7)
-        
-        # Ensure required directories exist
-        self._setup_directories()
+    - **resume_content**: Content of the resume
+    - **job_description**: Job description to tailor the objective to
+    - **objective_length**: Length of the objective ('short', 'medium', or 'long')
+    - **tone**: Tone of the objective ('professional', 'enthusiastic', 'formal')
+    """
+    try:
+        objective = generate_career_objective(
+            resume_content=request.resume_content,
+            job_description=request.job_description,
+            objective_length=request.objective_length,
+            tone=request.tone
+        )
+        return {"objective": objective}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-cover-letter/")
+async def generate_cover_letter_endpoint(request: CoverLetterRequest):
+    """
+    Generate a cover letter based on resume and job description.
     
-    def _setup_directories(self) -> None:
-        """Ensure required directories exist."""
-        ensure_directory(self.input_dir)
-        ensure_directory(self.output_dir)
+    - **resume_content**: Content of the resume
+    - **job_description**: Job description to tailor the cover letter to
+    - **company_name**: Name of the company (for personalization)
+    - **tone**: Tone of the cover letter ('professional', 'enthusiastic', 'formal')
+    """
+    try:
+        cover_letter = generate_cover_letter(
+            resume_content=request.resume_content,
+            job_description=request.job_description,
+            company_name=request.company_name,
+            tone=request.tone
+        )
+        return {"cover_letter": cover_letter}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/queue/")
+async def process_job_application(
+    request: QueueRequest,
+    generate_cv: bool = Query(False, description="Whether to generate a cover letter")
+):
+    """
+    Process a job application by generating an objective, updating the resume,
+    and optionally generating a cover letter.
     
-    def _check_required_files(self) -> Tuple[bool, str]:
-        """Check if required input files exist.
+    - **job_description**: The job description to tailor the application to
+    - **generate_cv**: Whether to generate a cover letter (default: False)
+    - **company_name**: Name of the company (for personalization)
+    - **tone**: Tone of the generated content ('professional', 'enthusiastic', 'formal')
+    """
+    try:
+        # Ensure output directory exists
+        output_dir = Path("generated")
+        output_dir.mkdir(exist_ok=True)
         
-        Returns:
-            Tuple of (success, message)
-        """
-        required_files = {
-            'resume': self.input_dir / 'resume.md',
-            'job_description': self.input_dir / 'jobdescription.txt',
-            'resume_template': self.input_dir / 'resume.docx'
+        # Get resume content and template
+        resume_content = get_resume_content()
+        template_path = get_resume_template()
+        
+        # Generate objective
+        objective, file_name = generate_career_objective(
+            resume_content=resume_content,
+            job_description=request.job_description,
+            tone=request.tone
+        )
+
+        print(file_name)
+        print(objective)
+        print('-'*50)
+        
+        # Update resume with new objective
+        # output_filename = f"resume_{uuid.uuid4().hex[:8]}.docx"
+        output_filename = f"{file_name}.docx"
+        output_path = output_dir / output_filename
+        
+        updated_resume_path = update_resume_objective(
+            source_path=template_path,
+            output_path=str(output_path),
+            new_objective=objective
+        )
+        
+        # Generate PDF version
+        pdf_path = create_pdf_from_docx(updated_resume_path, str(output_dir))
+        
+        result = {
+            "status": "success",
+            "objective": objective,
+            "resume_docx": str(updated_resume_path),
+            "resume_pdf": pdf_path
         }
         
-        missing = [name for name, path in required_files.items() if not path.exists()]
-        if missing:
-            return False, f"Missing required files: {', '.join(missing)}. Please add them to the 'input' directory."
-        return True, ""
-    
-    def _generate_cover_letter(
-        self,
-        resume_content: str,
-        job_description: str,
-        company_name: str = "the company"
-    ) -> str:
-        """Generate a tailored cover letter based on resume and job description.
-        
-        Args:
-            resume_content: The content of the resume
-            job_description: The job description
-            company_name: Name of the company (for personalization)
-            
-        Returns:
-            Generated cover letter text
-        """
-        prompt_template = """
-        Based on the following resume and job description, please write a professional 
-        cover letter that highlights the most relevant skills and experiences.
-        
-        RESUME:
-        {resume}
-        
-        JOB DESCRIPTION:
-        {job_description}
-        
-        Your cover letter should:
-        1. Be addressed to the hiring manager
-        2. Be specific about the role at {company_name}
-        3. Highlight 2-3 key qualifications that match the job requirements
-        4. Do not include any skills or experiences that are not relevant to the job and not mentioned in the resume
-        5. Be concise (2-3 paragraphs max)
-        6. End with a professional closing
-        
-        Return only the cover letter content, without any additional text or formatting.
-        """
-        
-        prompt = PromptTemplate(
-            template=prompt_template,
-            input_variables=["resume", "job_description", "company_name"]
-        )
-        
-        # Format the prompt
-        formatted_prompt = prompt.format(
-            resume=resume_content[:4000],
-            job_description=job_description[:2000],
-            company_name=company_name
-        )
-        
-        # Generate the response
-        response = self.llm.invoke(formatted_prompt)
-        return response.content.strip()
-    
-    def _generate_objective_and_filename(
-        self,
-        resume_content: str,
-        job_description: str,
-        base_name: str = "resume"
-    ) -> Tuple[str, str]:
-        """Generate a tailored objective and filename based on resume and job description.
-        
-        Args:
-            resume_content: The content of the resume
-            job_description: The job description
-            base_name: Base name to use for the filename
-            
-        Returns:
-            Tuple containing (objective, filename)
-        """
-        prompt_template = """
-        Based on the following resume and job description:
-        
-        RESUME:
-        {resume}
-        
-        JOB DESCRIPTION:
-        {job_description}
-        
-        Please provide:
-        1. A tailored career objective (2-3 sentences) that highlights the most relevant skills and experiences.
-        2. Make sure the objective is not too generic and is tailored to the job description.
-        3. Make sure the objective is not too long or short.
-        4. Make sure the objective is does not include any irrelevent skills or experiences. Also not any skills or experiences that are not mentioned in the resume.
-        5. A suggested filename that includes the job role and company name in the format: [role]-at-[company]
-        
-        Return the result in this exact format:
-        
-        OBJECTIVE:
-        [Your tailored objective here]
-        
-        FILENAME:
-        [suggested-filename]
-        """
-        
-        prompt = PromptTemplate(
-            template=prompt_template,
-            input_variables=["resume", "job_description"]
-        )
-        
-        # Format the prompt with the resume and job description
-        formatted_prompt = prompt.format(
-            resume=resume_content[:4000],  # Limit length to avoid token limits
-            job_description=job_description[:2000]
-        )
-        
-        # Generate the response
-        response = self.llm.invoke(formatted_prompt)
-        print(response.content)
-        
-        # Parse the response
-        try:
-            objective = re.search(r'OBJECTIVE:(.*?)(?=FILENAME:|$)', response.content, re.DOTALL)
-            filename = re.search(r'FILENAME:(.*?)$', response.content, re.DOTALL)
-            
-            if not objective or not filename:
-                raise ValueError("Could not parse AI response")
-            print('objective')
-            print(objective)
-            print('objective group')
-            print(objective.group(1))
-            objective = objective.group(1).strip()
-            filename = filename.group(1).strip()
-            
-            # Clean and validate the filename
-            filename = clean_text_for_filename(filename)
-            if not filename:
-                filename = f"{base_name}-generated"
-            
-            return objective, filename
-            
-        except Exception as e:
-            print(f"Error parsing AI response: {e}")
-            # Fallback to a default filename if parsing fails
-            return "A highly motivated professional with relevant experience.", f"{base_name}-generated"
-    
-    def _update_docx_objective(
-        self,
-        source_path: str,
-        output_path: str,
-        new_objective: str,
-        placeholder: str = '<objective_here>',
-        font_name: str = 'Spectral',
-        font_size: int = 10
-    ) -> str:
-        """
-        Update the objective section in a DOCX file.
-        
-        Args:
-            source_path: Path to the source DOCX file
-            output_path: Path where to save the updated file
-            new_objective: The new objective text to insert
-            placeholder: The placeholder text to replace
-            font_name: Font name for the objective text
-            font_size: Font size for the objective text
-            
-        Returns:
-            Path to the saved file
-            
-        Raises:
-            ValueError: If the placeholder is not found in the document
-        """
-        doc = Document(source_path)
-        found_placeholder = False
-        
-        # Search through all paragraphs in the document
-        for paragraph in doc.paragraphs:
-            if placeholder in paragraph.text:
-                # Clear the paragraph and add a new run with the new objective
-                paragraph.clear()
-                run = paragraph.add_run(new_objective)
-                font = run.font
-                font.name = font_name
-                font.size = Pt(font_size)
-                found_placeholder = True
-                break
-        
-        if not found_placeholder:
-            raise ValueError(f"Placeholder text '{placeholder}' not found in the document")
-        
-        # Save the updated document
-        doc.save(output_path)
-        return output_path
-    
-    def run(self, job_description_path: Optional[str] = None, generate_cv: bool = False, 
-             company_name: str = 'the company', generate_pdf: bool = False):
-        """Run the Resume AI application.
-        
-        Args:
-            job_description_path: Optional path to a job description file.
-                                 If not provided, uses the default location.
-            generate_cv: Whether to generate a cover letter
-            company_name: Name of the company for cover letter personalization
-            generate_pdf: Whether to generate a PDF version of the resume
-        """
-        print("\n=== Resume AI ===\n")
-        
-        # Set up paths
-        if job_description_path:
-            job_description_path = Path(job_description_path)
-            if not job_description_path.is_absolute():
-                job_description_path = self.base_dir / job_description_path
-        else:
-            job_description_path = self.input_dir / 'jobdescription.txt'
-        
-        resume_path = self.input_dir / 'resume.md'
-        template_path = self.input_dir / 'resume.docx'
-        
-        # Check if required files exist
-        if not job_description_path.exists():
-            print(f"Error: Job description file not found at {job_description_path}")
-            return
-            
-        if not resume_path.exists():
-            print(f"Error: Resume file not found at {resume_path}")
-            return
-            
-        if not template_path.exists():
-            print(f"Error: Resume template (DOCX) not found at {template_path}")
-            return
-        
-        try:
-            # Read the resume and job description
-            print("Reading resume and job description...")
-            resume_content = read_file_util(resume_path)
-            job_description = read_file_util(job_description_path)
-            
-            # Generate the objective and filename
-            print("Generating tailored objective...")
-            objective, filename = self._generate_objective_and_filename(
-                resume_content, 
-                job_description
+        # Generate cover letter if requested
+        if generate_cv or request.generate_cv:
+            cover_letter = generate_cover_letter(
+                resume_content=resume_content,
+                job_description=request.job_description,
+                company_name=request.company_name,
+                tone=request.tone
             )
             
-            print("\nGenerated Objective:")
-            print("-" * 50)
-            print(objective)
-            print("-" * 50)
+            # Save cover letter
+            cover_letter_path = output_dir / f"{file_name}.txt"
+            save_cover_letter(cover_letter, str(cover_letter_path))
             
-            # Generate output path
-            output_filename = f"{filename}.docx"
-            output_path = self.output_dir / output_filename
-            
-            # Update the DOCX with the new objective
-            print(f"\nUpdating resume: {output_path}")
-            self._update_docx_objective(
-                source_path=template_path,
-                output_path=output_path,
-                new_objective=objective
-            )
-            
-            print("\n✓ Resume updated successfully!")
-            print(f"   Saved to: {output_path}")
-            
-            # Generate PDF if requested
-            if generate_pdf:
-                print("\nGenerating PDF version...")
-                try:
-                    pdf_path = convert_to_pdf_libreoffice(str(output_path), str(self.output_dir))
-                    print(f"✓ PDF generated successfully: {pdf_path}")
-                except Exception as e:
-                    print(f"⚠ Failed to generate PDF: {str(e)}")
-                    print("   Make sure LibreOffice is installed and the path is correctly set in pdf_utils.py")
-            
-            # Generate cover letter if requested
-            if generate_cv:
-                print("\nGenerating cover letter...")
-                cover_letter = self._generate_cover_letter(
-                    resume_content=resume_content,
-                    job_description=job_description,
-                    company_name=company_name
-                )
-                
-                # Save cover letter to a text file
-                cover_letter_path = self.output_dir / f"{filename}-cover-letter.txt"
-                with open(cover_letter_path, 'w') as f:
-                    f.write(cover_letter)
-                
-                print("\n✓ Cover letter generated successfully!")
-                print(f"   Saved to: {cover_letter_path}")
-            
-        except Exception as e:
-            print(f"\nError: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
+            result["cover_letter"] = cover_letter
+            result["cover_letter_path"] = str(cover_letter_path)
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+async def read_root():
+    return {
+        "message": "Welcome to Resume AI API",
+        "endpoints": [
+            "POST /generate-objective/ - Generate a career objective",
+            "POST /generate-cover-letter/ - Generate a cover letter",
+            "POST /queue/?generate_cv=true - Process a job application (resume + optional cover letter)"
+        ]
+    }
+
+def run_api(host: str = "0.0.0.0", port: int = 8000):
+    """Run the FastAPI server."""
+    uvicorn.run("main:app", host=host, port=port, reload=True)
+
+# Ensure required directories exist
+ensure_directory(Path("input"))
+ensure_directory(Path("generated"))
+
+def check_required_files() -> Tuple[bool, str]:
+    """Check if required input files exist.
+    
+    Returns:
+        Tuple of (success, message)
+    """
+    input_dir = Path("input")
+    required_files = {
+        'resume': input_dir / 'resume.md',
+        'job_description': input_dir / 'jobdescription.txt',
+        'resume_template': input_dir / 'resume.docx'
+    }
+    
+    missing = [name for name, path in required_files.items() if not path.exists()]
+    if missing:
+        return False, f"Missing required files: {', '.join(missing)}. Please add them to the 'input' directory."
+    return True, ""
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Generate a tailored resume objective and cover letter.')
-    parser.add_argument(
-        'job_description',
-        nargs='?',
-        default=None,
-        help='Path to the job description file (default: input/jobdescription.txt)'
-    )
-    parser.add_argument(
-        '--cv',
-        action='store_true',
-        help='Generate a cover letter along with the resume'
-    )
-    parser.add_argument(
-        '--company',
-        type=str,
-        default='the company',
-        help='Name of the company for cover letter personalization (used with --cv)'
-    )
-    parser.add_argument(
-        '--pdf',
-        action='store_true',
-        help='Generate PDF version of the resume (requires LibreOffice)'
-    )
+    parser = argparse.ArgumentParser(description='Resume AI - AI-powered resume objective generator')
+    subparsers = parser.add_subparsers(dest='command', help='Command to run', required=True)
+    
+    # Parser for generate command
+    generate_parser = subparsers.add_parser('generate', help='Generate a new resume with objective')
+    generate_parser.add_argument('job_description', help='Path to job description file')
+    generate_parser.add_argument('--cv', action='store_true', help='Generate a cover letter')
+    generate_parser.add_argument('--company', default='the company', help='Company name for personalization')
+    generate_parser.add_argument('--pdf', action='store_true', help='Generate PDF version of the resume')
+    
+    # Parser for API server
+    api_parser = subparsers.add_parser('api', help='Run the API server')
+    api_parser.add_argument('--host', default='0.0.0.0', help='Host to run the API server on')
+    api_parser.add_argument('--port', type=int, default=8000, help='Port to run the API server on')
+    
     return parser.parse_args()
+
+def process_job_application_cli(job_description_path: str, generate_cv: bool = False, 
+                             company_name: str = "the company", generate_pdf: bool = False):
+    """Process a job application from the command line."""
+    try:
+        # Read job description
+        with open(job_description_path, 'r') as f:
+            job_description = f.read()
+        
+        # Read resume content
+        resume_content = get_resume_content()
+        
+        # Generate objective
+        print("Generating career objective...")
+        objective = generate_career_objective(
+            resume_content=resume_content,
+            job_description=job_description
+        )
+        
+        # Update resume
+        print("Updating resume...")
+        output_dir = Path("generated")
+        output_path = output_dir / f"resume_{Path(job_description_path).stem}.docx"
+        
+        updated_resume_path = update_resume_objective(
+            source_path=get_resume_template(),
+            output_path=str(output_path),
+            new_objective=objective
+        )
+        
+        result = {
+            "status": "success",
+            "objective": objective,
+            "resume_docx": str(updated_resume_path)
+        }
+        
+        # Generate PDF if requested
+        if generate_pdf:
+            print("Generating PDF...")
+            pdf_path = create_pdf_from_docx(updated_resume_path, str(output_dir))
+            result["resume_pdf"] = pdf_path
+        
+        # Generate cover letter if requested
+        if generate_cv:
+            print("Generating cover letter...")
+            cover_letter = generate_cover_letter(
+                resume_content=resume_content,
+                job_description=job_description,
+                company_name=company_name
+            )
+            
+            # Save cover letter
+            cover_letter_path = output_dir / f"cover_letter_{Path(job_description_path).stem}.txt"
+            save_cover_letter(cover_letter, str(cover_letter_path))
+            
+            result["cover_letter"] = cover_letter
+            result["cover_letter_path"] = str(cover_letter_path)
+        
+        print("\nJob application processed successfully!")
+        print(f"Updated resume: {result['resume_docx']}")
+        if 'resume_pdf' in result:
+            print(f"PDF version: {result['resume_pdf']}")
+        if 'cover_letter_path' in result:
+            print(f"Cover letter: {result['cover_letter_path']}")
+            
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
 
 def main():
     """Main entry point for the Resume AI application."""
-    args = parse_arguments()
-    app = ResumeAI()
-    app.run(
-        job_description_path=args.job_description,
-        generate_cv=args.cv,
-        company_name=args.company,
-        generate_pdf=args.pdf
-    )
+    try:
+        args = parse_arguments()
+        
+        if args.command == 'generate':
+            process_job_application_cli(
+                job_description_path=args.job_description,
+                generate_cv=args.cv,
+                company_name=args.company,
+                generate_pdf=args.pdf
+            )
+        elif args.command == 'api':
+            # Run the API server
+            print(f"Starting API server at http://{args.host}:{args.port}")
+            print(f"API documentation available at http://{args.host}:{args.port}/docs")
+            run_api(host=args.host, port=args.port)
+        else:
+            print(f"Unknown command: {args.command}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    def run():
-        try:
-            main()
-        except KeyboardInterrupt:
-            print("\n❌ Operation cancelled by user.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\n❌ An error occurred: {str(e)}", file=sys.stderr)
-            print("   Make sure to install the required dependencies:")
-            print("   pip install -r requirements.txt")
-            sys.exit(1)
-            print("   python setup_project.py")
-            sys.exit(1)
-    
-    # This ensures the script only runs once when executed directly
-    run()
+    main()

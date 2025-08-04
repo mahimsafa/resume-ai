@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Optional
 
 
-def convert_to_pdf_libreoffice(source_path: str, output_folder: str) -> str:
+def convert_to_pdf_libreoffice(source_path: str, output_dir: str, pdf_name: str) -> str:
     """Convert a document to PDF using LibreOffice.
     
     Args:
         source_path: Path to the source document
-        output_folder: Folder where the PDF will be saved
+        output_dir: Directory where the PDF will be saved
         
     Returns:
         Path to the generated PDF file
@@ -20,11 +20,15 @@ def convert_to_pdf_libreoffice(source_path: str, output_folder: str) -> str:
         FileNotFoundError: If LibreOffice is not found
         subprocess.CalledProcessError: If the conversion fails
     """
+    print('source_path', source_path)
+    print('output_dir', output_dir)
+    print('pdf_name', pdf_name)
+    
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"Source file not found: {source_path}")
     
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder, exist_ok=True)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
     
     libreoffice_bin = libreoffice_exec()
     
@@ -32,7 +36,7 @@ def convert_to_pdf_libreoffice(source_path: str, output_folder: str) -> str:
         libreoffice_bin,
         '--headless',
         '--convert-to', 'pdf',
-        '--outdir', output_folder,
+        '--outdir', output_dir,
         source_path
     ]
     
@@ -60,7 +64,7 @@ def convert_to_pdf_libreoffice(source_path: str, output_folder: str) -> str:
         else:
             # If pattern matching fails, construct the expected output path
             base_name = Path(source_path).stem
-            return os.path.join(output_folder, f"{base_name}.pdf")
+            return os.path.join(output_dir, f"{base_name}.pdf")
             
     except subprocess.TimeoutExpired:
         raise TimeoutError("PDF conversion timed out")
