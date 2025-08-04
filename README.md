@@ -17,6 +17,7 @@ An AI-powered tool that generates tailored career objectives and cover letters f
 - Python 3.8+
 - Google Cloud Account with Vertex AI enabled
 - A DOCX resume with a placeholder `<objective_here>`
+- SQLite (included in Python standard library) or Redis/RabbitMQ for production use
 
 ### Installation
 
@@ -40,6 +41,53 @@ An AI-powered tool that generates tailored career objectives and cover letters f
 4. **Set up Google Cloud credentials**:
    - Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to your service account key file
    - Or use `gcloud auth application-default login` if you have the Google Cloud SDK installed
+
+## 🚀 Celery Integration
+
+This project uses Celery for asynchronous task processing, allowing for background processing of resume and cover letter generation tasks.
+
+### Running the Celery Worker
+
+1. **Start the Celery worker** in a separate terminal:
+   ```bash
+   celery -A celery_app.celery worker --concurrency=1 --loglevel=info
+   ```
+
+2. **Environment Variables** (optional, for custom configuration):
+   ```bash
+   # Default uses SQLite
+   export CELERY_BROKER_URL=sqla+sqlite:///./celery_broker.sqlite
+   export CELERY_RESULT_BACKEND=db+sqlite:///./celery_results.sqlite
+   
+   # For production, use Redis or RabbitMQ
+   # export CELERY_BROKER_URL=redis://localhost:6379/0
+   # export CELERY_RESULT_BACKEND=redis://localhost:6379/0
+   ```
+
+3. **Available Tasks**:
+   - `process_application`: Processes a job application asynchronously
+     ```python
+     from lib.tasks import process_application
+     
+     # Example usage
+     result = process_application.delay(
+         resume_content="Your resume content",
+         job_description="Job description",
+         tone="professional",
+         company_name="Example Corp"
+     )
+     
+     # Get the result (blocking)
+     print(result.get())
+     ```
+
+4. **Monitoring** (optional):
+   - Install Flower for monitoring:
+     ```bash
+     pip install flower
+     celery -A celery_app.celery flower --port=5555
+     ```
+   - Access the dashboard at: http://localhost:5555
 
 ## 🛠️ Usage
 
