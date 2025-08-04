@@ -1,13 +1,14 @@
 # Resume AI
 
-An AI-powered tool that generates tailored career objectives for your resume based on job descriptions using Google's Gemini AI model.
+An AI-powered tool that generates tailored career objectives and cover letters for your resume based on job descriptions using Google's Gemini AI model. The project provides both a Command Line Interface (CLI) and a REST API.
 
 ## ✨ Features
 
-- **AI-Powered Objective Generation**: Creates personalized career objectives using Google's Gemini AI
+- **Dual Interface**: Choose between CLI or REST API based on your needs
+- **AI-Powered Generation**: Creates personalized career objectives and cover letters using Google's Gemini AI
 - **Seamless DOCX Integration**: Updates your Word resume while preserving all formatting and styles
 - **Smart Filenames**: Automatically generates descriptive filenames based on job role and company
-- **Simple & Lightweight**: Single Python file with minimal dependencies
+- **Modern API**: Built with FastAPI for high performance and automatic documentation
 - **Error Handling**: Comprehensive error handling and user feedback
 
 ## 🚀 Quick Start
@@ -42,53 +43,66 @@ An AI-powered tool that generates tailored career objectives for your resume bas
 
 ## 🛠️ Usage
 
+### Command Line Interface (CLI)
+
 1. **Prepare your files**:
    - Create an `input` directory if it doesn't exist
    - Place your resume in `input/resume.md`
    - Place your job description in `input/jobdescription.txt`
    - Place your resume template (with `<objective_here>` placeholder) in `input/resume.docx`
 
-2. **Run the script**:
+2. **Run the CLI tool**:
    ```bash
-   python main.py
-   ```
+   # Generate a resume with objective
+   python cmd.py generate input/jobdescription.txt
    
-   Or specify a custom job description file:
+   # Generate with cover letter
+   python cmd.py generate input/jobdescription.txt --cv --company "Company Name"
+   
+   # Generate PDF version
+   python cmd.py generate input/jobdescription.txt --pdf
+   ```
+
+3. **Find your updated files** in the `generated/` directory with descriptive filenames.
+
+### REST API
+
+1. **Start the API server**:
    ```bash
-   python main.py path/to/your/jobdescription.txt
+   # Development (auto-reload on changes)
+   uvicorn main:app --reload
+   
+   # Production
+   uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 
-3. **Find your updated resume**:
-   - The generated resume will be saved in the `generated` directory
-   - The filename will be based on the job role and company name
-   ```
-   input/
-   ├── resume.md          # Your resume in markdown format
-   ├── resume.docx        # Your resume with <objective_here> placeholder
-   └── jobdescription.txt # The job description
-   ```
+2. **API Endpoints**:
 
-2. **Run the tool**:
-   ```bash
-   python main.py
-   ```
-   Or for a specific job description:
-   ```bash
-   python main.py input/jobdescription.txt
-   ```
+   - **GET /** - Welcome message and API documentation
+   - **POST /queue/** - Process a job application
+     
+     Example request:
+     ```bash
+     curl -X POST "http://localhost:8000/queue/?generate_cv=true" \
+          -H "Content-Type: application/json" \
+          -d '{
+                "job_description": "Job description here...",
+                "company_name": "Tech Corp",
+                "tone": "professional"
+              }'
+     ```
 
-3. **Find your updated resume** in the `generated/` directory with a descriptive filename.
+3. **Interactive API documentation** available at:
+   - Swagger UI: `http://localhost:8000/docs`
+   - ReDoc: `http://localhost:8000/redoc`
 
-### Advanced Usage
-
-#### Customize Output Directory
-```bash
-python main.py --output custom-output/
+### File Structure
 ```
-
-#### Specify Custom Input Files
-```bash
-python main.py --resume input/my-resume.md --docx input/my-resume.docx --job input/job-posting.txt
+input/
+├── resume.md          # Your resume in markdown format
+├── resume.docx        # Your resume with <objective_here> placeholder
+└── jobdescription.txt # The job description
+generated/             # Output directory for generated files
 ```
 
 ## 🏗️ Project Structure
@@ -99,38 +113,39 @@ resume-ai/
 │   ├── resume.md
 │   ├── resume.docx
 │   └── jobdescription.txt
-├── generated/             # Generated resumes (auto-created)
-├── src/
-│   └── resume_ai/
-│       ├── __init__.py
-│       ├── app.py              # Main application class
-│       ├── services/           # Service layer
-│       │   ├── __init__.py
-│       │   ├── ai_service.py   # AI integration with Gemini
-│       │   └── document_service.py  # DOCX manipulation
-│       └── utils/              # Helper functions
-│           ├── __init__.py
-│           └── file_utils.py   # File operations
-├── .env.example           # Environment variables template
-├── .gitignore
-├── README.md
+├── generated/             # Generated files (auto-created)
+├── lib/                   # Core functionality modules
+│   ├── objective_generator.py  # AI-powered objective generation
+│   ├── cover_letter_generator.py  # Cover letter generation
+│   └── pdf_utils.py       # PDF and DOCX manipulation
+├── main.py                # FastAPI application
+├── cmd.py                 # Command Line Interface
 ├── requirements.txt       # Python dependencies
-├── setup.py              # Package configuration
-└── setup_project.py      # Project setup helper
+├── .env.example           # Environment variables template
+└── README.md              # This file
 ```
 
 ## 🔧 Configuration
 
 ### Environment Variables
-Create a `.env` file with:
+Create a `.env` file in the project root with the following variables:
+
 ```ini
+# Google Cloud Configuration
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
 GOOGLE_GENAI_USE_VERTEXAI=True
 GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_CLOUD_PROJECT=your-project-id
+
+# API Configuration (optional)
+API_HOST=0.0.0.0
+API_PORT=8000
 ```
 
-### Customizing the Prompt
-Edit the prompt template in `src/resume_ai/services/ai_service.py` to adjust how the AI generates objectives.
+### Customizing Prompts
+You can customize the AI prompts in the respective generator modules:
+- `lib/objective_generator.py` - For career objective generation
+- `lib/cover_letter_generator.py` - For cover letter generation
 
 ## 🤝 Contributing
 

@@ -1,48 +1,27 @@
 #!/usr/bin/env python3
 """
-Resume AI - AI-powered resume objective generator
+Resume AI - AI-powered resume objective generator (API Server)
 
-This script provides both a CLI and API interface for generating tailored
+This module provides a FastAPI interface for generating tailored
 career objectives, cover letters, and updating resumes.
 
 API Endpoints:
-    POST /generate-objective/ - Generate a career objective
-    POST /generate-cover-letter/ - Generate a cover letter
+    GET / - Welcome message and available endpoints
     POST /queue/ - Process a job application (objective + resume update + optional cover letter)
-
-CLI Usage:
-    python main.py [command] [options]
-
-Examples:
-    python main.py api  # Start the API server
-    python main.py generate job_description.txt  # Generate a resume with objective
-    python main.py update resume.docx  # Update an existing resume
 """
-from importlib import reload
-import os
-import sys
-import argparse
-import re
 import uvicorn
 import uuid
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
-from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Local imports
 from lib.objective_generator import generate_career_objective
 from lib.cover_letter_generator import generate_cover_letter, save_cover_letter
 from lib.pdf_utils import update_resume_objective, create_pdf_from_docx
-from utils import (
-    ensure_extension,
-    get_unique_filename,
-    clean_text_for_filename,
-    ensure_directory,
-    read_file as read_file_util
-)
+from utils import read_file as read_file_util, ensure_directory
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -195,134 +174,10 @@ def run_api(host: str = "0.0.0.0", port: int = 8000):
 ensure_directory(Path("input"))
 ensure_directory(Path("generated"))
 
-def check_required_files() -> Tuple[bool, str]:
-    """Check if required input files exist.
-    
-    Returns:
-        Tuple of (success, message)
-    """
-    input_dir = Path("input")
-    required_files = {
-        'resume': input_dir / 'resume.md',
-        'job_description': input_dir / 'jobdescription.txt',
-        'resume_template': input_dir / 'resume.docx'
-    }
-    
-    missing = [name for name, path in required_files.items() if not path.exists()]
-    if missing:
-        return False, f"Missing required files: {', '.join(missing)}. Please add them to the 'input' directory."
-    return True, ""
-
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Resume AI - AI-powered resume objective generator')
-    subparsers = parser.add_subparsers(dest='command', help='Command to run', required=True)
-    
-    # Parser for generate command
-    generate_parser = subparsers.add_parser('generate', help='Generate a new resume with objective')
-    generate_parser.add_argument('job_description', help='Path to job description file')
-    generate_parser.add_argument('--cv', action='store_true', help='Generate a cover letter')
-    generate_parser.add_argument('--company', default='the company', help='Company name for personalization')
-    generate_parser.add_argument('--pdf', action='store_true', help='Generate PDF version of the resume')
-    
-    # Parser for API server
-    api_parser = subparsers.add_parser('api', help='Run the API server')
-    api_parser.add_argument('--host', default='0.0.0.0', help='Host to run the API server on')
-    api_parser.add_argument('--port', type=int, default=8000, help='Port to run the API server on')
-    
-    return parser.parse_args()
-
-def process_job_application_cli(job_description_path: str, generate_cv: bool = False, 
-                             company_name: str = "the company", generate_pdf: bool = False):
-    """Process a job application from the command line."""
-    try:
-        # Read job description
-        with open(job_description_path, 'r') as f:
-            job_description = f.read()
-        
-        # Read resume content
-        resume_content = get_resume_content()
-        
-        # Generate objective
-        print("Generating career objective...")
-        objective = generate_career_objective(
-            resume_content=resume_content,
-            job_description=job_description
-        )
-        
-        # Update resume
-        print("Updating resume...")
-        output_dir = Path("generated")
-        output_path = output_dir / f"resume_{Path(job_description_path).stem}.docx"
-        
-        updated_resume_path = update_resume_objective(
-            source_path=get_resume_template(),
-            output_path=str(output_path),
-            new_objective=objective
-        )
-        
-        result = {
-            "status": "success",
-            "objective": objective,
-            "resume_docx": str(updated_resume_path)
-        }
-        
-        # Generate PDF if requested
-        if generate_pdf:
-            print("Generating PDF...")
-            pdf_path = create_pdf_from_docx(updated_resume_path, str(output_dir))
-            result["resume_pdf"] = pdf_path
-        
-        # Generate cover letter if requested
-        if generate_cv:
-            print("Generating cover letter...")
-            cover_letter = generate_cover_letter(
-                resume_content=resume_content,
-                job_description=job_description,
-                company_name=company_name
-            )
-            
-            # Save cover letter
-            cover_letter_path = output_dir / f"cover_letter_{Path(job_description_path).stem}.txt"
-            save_cover_letter(cover_letter, str(cover_letter_path))
-            
-            result["cover_letter"] = cover_letter
-            result["cover_letter_path"] = str(cover_letter_path)
-        
-        print("\nJob application processed successfully!")
-        print(f"Updated resume: {result['resume_docx']}")
-        if 'resume_pdf' in result:
-            print(f"PDF version: {result['resume_pdf']}")
-        if 'cover_letter_path' in result:
-            print(f"Cover letter: {result['cover_letter_path']}")
-            
-    except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
-
-def main():
-    """Main entry point for the Resume AI application."""
-    try:
-        args = parse_arguments()
-        
-        if args.command == 'generate':
-            process_job_application_cli(
-                job_description_path=args.job_description,
-                generate_cv=args.cv,
-                company_name=args.company,
-                generate_pdf=args.pdf
-            )
-        elif args.command == 'api':
-            # Run the API server
-            print(f"Starting API server at http://{args.host}:{args.port}")
-            print(f"API documentation available at http://{args.host}:{args.port}/docs")
-            run_api(host=args.host, port=args.port)
-        else:
-            print(f"Unknown command: {args.command}")
-            sys.exit(1)
-    except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+# This file is meant to be run with uvicorn directly or imported as a module
+# To run the API server: uvicorn main:app --reload
+# For production: uvicorn main:app --host 0.0.0.0 --port 8000
 
 if __name__ == "__main__":
-    main()
+    # For backward compatibility, run the API server directly
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
